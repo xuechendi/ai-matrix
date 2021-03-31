@@ -36,7 +36,7 @@ for line in fin:
             mid_str += mid + ""
         if len(cat_str) > 0: cat_str = cat_str[:-1]
         if len(mid_str) > 0: mid_str = mid_str[:-1]
-        if history_clk_num >= 1:    # 8 is the average length of user behavior
+        if history_clk_num >= 2:    # 8 is the average length of user behavior
             print >> fo, items[1] + "\t" + user + "\t" + movie_id + "\t" + cat1 +"\t" + mid_str + "\t" + cat_str
     last_user = user
     if clk:
