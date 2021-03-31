@@ -6,6 +6,7 @@ import time
 import random
 import sys
 from utils import *
+import pickle as pkl
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -28,7 +29,8 @@ ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 
 TOTAL_TRAIN_SIZE = 512000
-#TOTAL_TRAIN_SIZE = 16000
+# TOTAL_TRAIN_SIZE = 16000
+cur_iter = 0
 
 
 def prepare_data(input, target, maxlen=None, return_neg=False):
@@ -93,6 +95,13 @@ def prepare_data(input, target, maxlen=None, return_neg=False):
     uids = numpy.array([inp[0] for inp in input])
     mids = numpy.array([inp[1] for inp in input])
     cats = numpy.array([inp[2] for inp in input])
+
+    # output = [uids, mids, cats, mid_his, cat_his, mid_mask, numpy.array(
+    #    target), numpy.array(lengths_x), noclk_mid_his, noclk_cat_his]
+    # pkl.dump(output, open('prepared_data_'+str(cur_iter)+'.pkl', 'wb'))
+    # global cur_iter
+    # cur_iter += 1
+    # raise StopIteration
 
     if return_neg:
         return uids, mids, cats, mid_his, cat_his, mid_mask, numpy.array(target), numpy.array(lengths_x), noclk_mid_his, noclk_cat_his
@@ -289,7 +298,7 @@ def train(
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         sys.stdout.flush()
-        #print('test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
+        # print('test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
         sys.stdout.flush()
 
         iter = 0
@@ -317,6 +326,8 @@ def train(
                 iter += 1
                 train_size += batch_size
                 sys.stdout.flush()
+                # print('current loss is %.4f, aux_loss is %.4f, aggregated loss is %.4f, aggregated aux is %.4f' % (
+                #    loss, aux_loss, loss_sum, aux_loss_sum))
                 if (iter % test_iter) == 0:
                     # print("train_size: %d" % train_size)
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
@@ -403,11 +414,11 @@ def test(
         if data_type == 'FP16':
             fp32_variables = [var_name for var_name,
                               _ in tf.contrib.framework.list_variables(model_path)]
-            #print("fp32_variables: ", fp32_variables)
+            # print("fp32_variables: ", fp32_variables)
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
             for variable in tf.global_variables():
-                #print("variable: ", variable)
+                # print("variable: ", variable)
                 if variable.op.name in fp32_variables:
                     var = tf.contrib.framework.load_variable(
                         model_path, variable.op.name)
