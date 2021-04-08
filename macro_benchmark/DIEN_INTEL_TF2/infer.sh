@@ -21,7 +21,7 @@ do
 	echo "----------------------------------------------------------------"
 	start=`date +%s%N`
 	# numactl -N 0 python script/train.py --mode=test --batch_size=$batch |& tee results/result_infer_${batch}.txt
-    numactl -C 0-0,40-40 --membind=0 python script/train.py --mode=test --batch_size=$batch |& tee results/result_infer_${batch}.txt
+        numactl -C 0-0,40-40 --membind=0 python script/train.py --mode=test --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_infer_${batch}.txt
 	end=`date +%s%N`
 	total_time=$(((end-start)/1000000))
     #total_time=`bc <<< "scale = 3; ($end-$start)/1000000000"`

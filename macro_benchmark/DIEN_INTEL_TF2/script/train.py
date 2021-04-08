@@ -122,17 +122,20 @@ def eval(sess, test_data, model, model_path):
     nums = 0
     stored_arr = []
     eval_time = 0
+    prepare_time = 0
 
     sample_freq = 70000
     options = tf.compat.v1.RunOptions(
         trace_level=tf.compat.v1.RunOptions.FULL_TRACE)
     run_metadata = tf.compat.v1.RunMetadata()
 
+    start_prepare_time = time.time()
     for src, tgt in test_data:
         nums += 1
         sys.stdout.flush()
         uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(
             src, tgt, return_neg=True)
+        end_prepare_time = time.time()
         # print("begin evaluation")
         start_time = time.time()
 
@@ -147,7 +150,8 @@ def eval(sess, test_data, model, model_path):
         end_time = time.time()
         # print("evaluation time of one batch: %.3f" % (end_time - start_time))
         # print("end evaluation")
-        eval_time += end_time - start_time
+        eval_time += (end_time - start_time)
+        prepare_time += (end_prepare_time - start_prepare_time)
         loss_sum += loss
         aux_loss_sum = aux_loss
         accuracy_sum += acc
@@ -157,6 +161,7 @@ def eval(sess, test_data, model, model_path):
             stored_arr.append([p, t])
         # print("nums: ", nums)
         # break
+        start_prepare_time = time.time()
 
     # fetched_timeline = timeline.Timeline(run_metadata.step_stats)
     # chrome_trace = fetched_timeline.generate_chrome_trace_format()
@@ -171,7 +176,7 @@ def eval(sess, test_data, model, model_path):
         best_auc = test_auc
         if args.mode == 'train':
             model.save(sess, model_path)
-    return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums
+    return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums
 
 
 def train_synthetic(
@@ -192,7 +197,8 @@ def train_synthetic(
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     synthetic_input = True
 
-    sess_config = tf.compat.v1.ConfigProto(gpu_options=gpu_options, log_device_placement=False)
+    sess_config = tf.compat.v1.ConfigProto(
+        gpu_options=gpu_options, log_device_placement=False)
     with tf.compat.v1.Session(config=sess_config) as sess:
         # parameters needs to put in config file
 
@@ -264,8 +270,8 @@ def train(
         cat_voc="cat_voc.pkl",
         batch_size=128,
         maxlen=100,
-        test_iter=100,
-        save_iter=100,
+        test_iter=500,
+        save_iter=500,
         model_type='DNN',
         data_type='FP32',
     seed=2,
@@ -281,6 +287,7 @@ def train(
         session_config.intra_op_parallelism_threads = args.num_intra_threads
         session_config.inter_op_parallelism_threads = args.num_inter_threads
 
+    session_start_time = time.time()
     with tf.compat.v1.Session(config=session_config) as sess:
         # with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) as sess:
         train_data = DataIterator(
@@ -350,6 +357,14 @@ def train(
         train_size = 0
         approximate_accelerator_time = 0
 
+        session_end_time = time.time()
+        session_init_elapse_time = session_end_time - session_start_time
+
+        data_load_elapse_time = 0
+        save_elapse_time = 0
+        test_elapse_time = 0
+        train_elapse_time = 0
+        test_prepare_time = 0
         for itr in range(1):
             loss_sum = 0.0
             accuracy_sum = 0.
@@ -364,13 +379,18 @@ def train(
 
             total_data = []
 
+            data_load_start_time = time.time()
             for src, tgt in train_data:
                 nums += 1
                 uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(
                     src, tgt, maxlen, return_neg=True)
+                data_load_end_time = time.time()
+                data_load_elapse_time += (data_load_end_time -
+                                          data_load_start_time)
 
                 total_data.append(
                     [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats])
+                data_load_start_time = time.time()
 
             # prepared_filename = "dien_data_trained_prepared_batch_{}.pickle".format(batch_size)
             # with open(prepared_filename, 'wb') as f:
@@ -409,6 +429,7 @@ def train(
 
                 # print("training time of one batch: %.3f" % (end_time - start_time))
                 approximate_accelerator_time += end_time - start_time
+                train_elapse_time += (end_time - start_time)
                 elapsed_time_records.append(end_time - start_time)
 
                 loss_sum += loss
@@ -422,8 +443,12 @@ def train(
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
                     print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- train_aux_loss: %.4f' %
                           (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
+                    test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums = eval(
+                        sess, test_data, model, best_model_path)
                     print(' test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' %
-                          eval(sess, test_data, model, best_model_path))
+                          (test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums))
+                    test_elapse_time += eval_time
+                    test_prepare_time += prepare_time
 
                     # delete test every 100 iterations no need in training time
                     # print(' test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
@@ -431,17 +456,20 @@ def train(
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0
                 if (iter % save_iter) == 0:
-                #if (iter % 10000) == 0:
+                    # if (iter % 10000) == 0:
                     print('save model iter: %d' % (iter))
+                    save_start_time = time.time()
                     model.save(sess, model_path+"--"+str(iter))
+                    save_end_time = time.time()
+                    save_elapse_time += (save_end_time - save_start_time)
                 if train_size >= TOTAL_TRAIN_SIZE:
                     break
 
             # with open('./times/24core_1inst_train_timeline_g210_8260_nosparse_adam_disable_noaddn_batch128_newunsortedsum_inter4_intra6_omp6_0615.txt', 'w') as wf:
             # with open('./times/dien_24core_1inst_train_timeline_8260_fp32_step{}_im0617allmklinput_tanhfusion_inter1_intra24_omp24_0701.txt'.format(nums), 'w') as wf:
             with open('./times/dien_train_timeline_fp32_step{}.txt'.format(nums), 'w') as wf:
-                 for time_per_iter in elapsed_time_records:
-                     wf.write(str(time_per_iter) + '\n')
+                for time_per_iter in elapsed_time_records:
+                    wf.write(str(time_per_iter) + '\n')
 
             print("iteration: ", nums)
 
@@ -454,6 +482,8 @@ def train(
               approximate_accelerator_time)
         print("Approximate accelerator performance in recommendations/second is %.3f" %
               (float(TOTAL_TRAIN_SIZE)/float(approximate_accelerator_time)))
+        print("process time breakdown in seconds are session_init %.3f, train_prepare %.3f, train %.3f, test_prepare %.3f, test %.3f, model save %.3f" %
+              (session_init_elapse_time, data_load_elapse_time, train_elapse_time, test_prepare_time, test_elapse_time, save_elapse_time))
 
 
 def test(
@@ -571,36 +601,50 @@ def test(
         # for variable in tf.global_variables():
         #     print("after load checkpoint: ", sess.run(variable))
         approximate_accelerator_time = 0
-        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, num_iters = eval(
+        test_elapse_time = 0
+        prepare_elapse_time = 0
+        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time, num_iters = eval(
             sess, test_data, model, model_path)
         approximate_accelerator_time += eval_time
-        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f' %
-              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time))
-        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, num_iters = eval(
+        test_elapse_time += eval_time
+        prepare_elapse_time += prepare_time
+        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- prepare_time: %.3f' %
+              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time))
+        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time, num_iters = eval(
             sess, test_data, model, model_path)
         approximate_accelerator_time += eval_time
-        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f' %
-              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time))
-        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, num_iters = eval(
+        test_elapse_time += eval_time
+        prepare_elapse_time += prepare_time
+        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- prepare_time: %.3f' %
+              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time))
+        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time, num_iters = eval(
             sess, test_data, model, model_path)
         approximate_accelerator_time += eval_time
-        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f' %
-              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time))
-        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, num_iters = eval(
+        test_elapse_time += eval_time
+        prepare_elapse_time += prepare_time
+        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- prepare_time: %.3f' %
+              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time))
+        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time, num_iters = eval(
             sess, test_data, model, model_path)
         approximate_accelerator_time += eval_time
-        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f' %
-              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time))
-        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, num_iters = eval(
+        test_elapse_time += eval_time
+        prepare_elapse_time += prepare_time
+        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- prepare_time: %.3f' %
+              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time))
+        test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time, num_iters = eval(
             sess, test_data, model, model_path)
         approximate_accelerator_time += eval_time
-        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f' %
-              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time))
+        test_elapse_time += eval_time
+        prepare_elapse_time += prepare_time
+        print('test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.9f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- prepare_time: %.3f' %
+              (test_auc, test_loss, test_accuracy, test_aux_loss, eval_time, prepare_time))
         print("Total recommendations: %d" % (num_iters*batch_size))
         print("Approximate accelerator time in seconds is %.3f" %
               approximate_accelerator_time)
         print("Approximate accelerator performance in recommendations/second is %.3f" %
               (float(5*num_iters*batch_size)/float(approximate_accelerator_time)))
+        print("Process time breakdown, prepare data took %.3f and test took %.3f, avg is prepare %.3f, test %.3f" % (
+            prepare_elapse_time, test_elapse_time, prepare_elapse_time/5, test_elapse_time/5,))
 
 
 if __name__ == '__main__':
