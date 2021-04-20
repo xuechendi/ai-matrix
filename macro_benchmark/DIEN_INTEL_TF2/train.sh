@@ -16,8 +16,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-batchs='256 512 1024'
-#batchs='1024'
+#batchs='256 512 1024'
+batchs='256'
 
 for batch in $batchs
 do

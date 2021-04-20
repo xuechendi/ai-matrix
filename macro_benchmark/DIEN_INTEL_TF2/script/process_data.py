@@ -55,14 +55,17 @@ def manual_join():
                 if asin_neg == asin:
                     continue 
                 items[1] = asin_neg
-                print>>fo, "0" + "\t" + "\t".join(items) + "\t" + meta_map[asin_neg]
+                #print>>fo, "0" + "\t" + "\t".join(items) + "\t" + meta_map[asin_neg]
+                print("0" + "\t" + "\t".join(items) + "\t" + meta_map[asin_neg], file = fo)
                 j += 1
                 if j == 1:             #negative sampling frequency
                     break
             if asin in meta_map:
-                print>>fo, "1" + "\t" + line + "\t" + meta_map[asin]
+                #print>>fo, "1" + "\t" + line + "\t" + meta_map[asin]
+                print("1" + "\t" + line + "\t" + meta_map[asin], file = fo)
             else:
-                print>>fo, "1" + "\t" + line + "\t" + "default_cat"
+                #print>>fo, "1" + "\t" + line + "\t" + "default_cat"
+                print("1" + "\t" + line + "\t" + "default_cat", file = fo)
 
 
 def split_test():
@@ -95,7 +98,7 @@ def split_test():
                 print>>fo, "20190119" + "\t" + line
         i += 1
 
-process_meta(sys.argv[1])
-process_reviews(sys.argv[2])
+#process_meta(sys.argv[1])
+#process_reviews(sys.argv[2])
 manual_join()
 split_test()
