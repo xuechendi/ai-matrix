@@ -14,7 +14,9 @@ from tensorflow.python.client import timeline
 from tensorflow.python.platform import gfile
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]="0, 1"
 
 
 parser = argparse.ArgumentParser()
@@ -41,7 +43,7 @@ HIDDEN_SIZE = 18 * 2
 ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 
-TOTAL_TRAIN_SIZE = 2048000
+TOTAL_TRAIN_SIZE = 4096000
 #TOTAL_TRAIN_SIZE = 51200
 
 
@@ -115,7 +117,7 @@ def prepare_data(input, target, maxlen=None, return_neg=False):
         return uids, mids, cats, mid_his, cat_his, mid_mask, numpy.array(target), numpy.array(lengths_x)
 
 
-def eval(sess, test_data, model, model_path):
+def eval(sess, test_data, model, model_path, test_data_prepared = None):
     loss_sum = 0.
     accuracy_sum = 0.
     aux_loss_sum = 0.
@@ -129,39 +131,76 @@ def eval(sess, test_data, model, model_path):
         trace_level=tf.compat.v1.RunOptions.FULL_TRACE)
     run_metadata = tf.compat.v1.RunMetadata()
 
+    prepared_data = []
     start_prepare_time = time.time()
-    for src, tgt in test_data:
-        nums += 1
-        sys.stdout.flush()
-        uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(
-            src, tgt, return_neg=True)
-        end_prepare_time = time.time()
-        # print("begin evaluation")
-        start_time = time.time()
-
-        if nums % sample_freq == 0:
-            prob, loss, acc, aux_loss = model.calculate(sess,
-                                                        [uids, mids, cats, mid_his, cat_his, mid_mask,
-                                                            target, sl, noclk_mids, noclk_cats],
-                                                        timeline=True, options=options, run_metadata=run_metadata)
-        else:
-            prob, loss, acc, aux_loss = model.calculate(sess,
-                                                        [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats])
-        end_time = time.time()
-        # print("evaluation time of one batch: %.3f" % (end_time - start_time))
-        # print("end evaluation")
-        eval_time += (end_time - start_time)
-        prepare_time += (end_prepare_time - start_prepare_time)
-        loss_sum += loss
-        aux_loss_sum = aux_loss
-        accuracy_sum += acc
-        prob_1 = prob[:, 0].tolist()
-        target_1 = target[:, 0].tolist()
-        for p, t in zip(prob_1, target_1):
-            stored_arr.append([p, t])
-        # print("nums: ", nums)
-        # break
-        start_prepare_time = time.time()
+    if test_data_prepared:
+        prepared_data = test_data_prepared
+        for data in test_data_prepared:
+            nums += 1
+            sys.stdout.flush()
+            uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = data
+            end_prepare_time = time.time()
+            # print("begin evaluation")
+            start_time = time.time()
+    
+            if nums % sample_freq == 0:
+                prob, loss, acc, aux_loss = model.calculate(sess,
+                                                            [uids, mids, cats, mid_his, cat_his, mid_mask,
+                                                                target, sl, noclk_mids, noclk_cats],
+                                                            timeline=True, options=options, run_metadata=run_metadata)
+            else:
+                prob, loss, acc, aux_loss = model.calculate(sess,
+                                                            [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats])
+            end_time = time.time()
+            # print("evaluation time of one batch: %.3f" % (end_time - start_time))
+            # print("end evaluation")
+            eval_time += (end_time - start_time)
+            prepare_time += (end_prepare_time - start_prepare_time)
+            loss_sum += loss
+            aux_loss_sum = aux_loss
+            accuracy_sum += acc
+            prob_1 = prob[:, 0].tolist()
+            target_1 = target[:, 0].tolist()
+            for p, t in zip(prob_1, target_1):
+                stored_arr.append([p, t])
+            # print("nums: ", nums)
+            # break
+            start_prepare_time = time.time()
+    else:
+        for src, tgt in test_data:
+            nums += 1
+            sys.stdout.flush()
+            data = prepare_data(src, tgt, return_neg=True)
+            prepared_data.append(data)
+            uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = data
+            
+            end_prepare_time = time.time()
+            # print("begin evaluation")
+            start_time = time.time()
+    
+            if nums % sample_freq == 0:
+                prob, loss, acc, aux_loss = model.calculate(sess,
+                                                            [uids, mids, cats, mid_his, cat_his, mid_mask,
+                                                                target, sl, noclk_mids, noclk_cats],
+                                                            timeline=True, options=options, run_metadata=run_metadata)
+            else:
+                prob, loss, acc, aux_loss = model.calculate(sess,
+                                                            [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats])
+            end_time = time.time()
+            # print("evaluation time of one batch: %.3f" % (end_time - start_time))
+            # print("end evaluation")
+            eval_time += (end_time - start_time)
+            prepare_time += (end_prepare_time - start_prepare_time)
+            loss_sum += loss
+            aux_loss_sum = aux_loss
+            accuracy_sum += acc
+            prob_1 = prob[:, 0].tolist()
+            target_1 = target[:, 0].tolist()
+            for p, t in zip(prob_1, target_1):
+                stored_arr.append([p, t])
+            # print("nums: ", nums)
+            # break
+            start_prepare_time = time.time()
 
     # fetched_timeline = timeline.Timeline(run_metadata.step_stats)
     # chrome_trace = fetched_timeline.generate_chrome_trace_format()
@@ -176,7 +215,7 @@ def eval(sess, test_data, model, model_path):
         best_auc = test_auc
         if args.mode == 'train':
             model.save(sess, model_path)
-    return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums
+    return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums, prepared_data
 
 
 def train_synthetic(
@@ -323,7 +362,7 @@ def train(
                 n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
         elif model_type == 'DIEN':
             model = Model_DIN_V2_Gru_Vec_attGru_Neg(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type,
-                                                    batch_size=batch_size, max_length=maxlen, device='cpu')
+                                                    batch_size=batch_size, max_length=maxlen, device='gpu')
         else:
             print("Invalid model_type : %s", model_type)
             return
@@ -401,6 +440,7 @@ def train(
             #     total_data = pickle.load(f)
 
             nums = 0
+            test_prepared = None
             for i in range(len(total_data)):
                 nums += 1
                 # print("iter", nums)
@@ -443,8 +483,8 @@ def train(
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
                     print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- train_aux_loss: %.4f' %
                           (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
-                    test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums = eval(
-                        sess, test_data, model, best_model_path)
+                    test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums, test_prepared = eval(
+                        sess, test_data, model, best_model_path, test_prepared)
                     print(' test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' %
                           (test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums))
                     test_elapse_time += eval_time
