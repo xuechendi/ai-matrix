@@ -1,0 +1,16 @@
+**/results*
+**/local_*
+**/*.json
+**/*.pkl
+**/*.gz
+**/*.pyc
+**/*-info
+**/jointed-new
+**/dnn_save_path
+**/dnn_best_model*
+**/*spark
+**/aggregated_*
+**/meta_map
+**/pyspark_data/*
+**/python_data/*
+**/downloaded_data/*
