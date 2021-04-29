@@ -668,6 +668,12 @@ def _dynamic_rnn_loop(cell,
     ValueError: If the input depth cannot be inferred via shape inference
       from the inputs.
   """
+  # tf.compat.v1.disable_v2_behavior()
+  # tf.compat.v1.disable_control_flow_v2()
+  # tf.compat.v1.disable_eager_execution()
+  # tf.compat.v1.disable_resource_variables()
+  # tf.compat.v1.disable_tensor_equality()
+  # tf.compat.v1.disable_v2_tensorshape()
   state = initial_state
   assert isinstance(parallel_iterations, int), "parallel_iterations must be int"
 
@@ -848,8 +854,8 @@ def raw_rnn(cell, loop_fn,
         time=time + 1, cell_output=output, cell_state=cell_state,
         loop_state=loop_state)
     # Emit zeros and copy forward state for minibatch entries that are finished.
-    state = tf.where(finished, state, next_state)
-    emit = tf.where(finished, tf.zeros_like(emit), emit)
+    state = array_ops.where(finished, state, next_state)
+    emit = array_ops.where(finished, tf.zeros_like(emit), emit)
     emit_ta = emit_ta.write(time, emit)
     # If any new minibatch entries are marked as finished, mark these.
     finished = tf.logical_or(finished, next_finished)

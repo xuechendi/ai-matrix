@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export KMP_AFFINITY=granularity=fine,verbose,compact,1,0
+export OMP_NUM_THREADS=1
+# export LD_PRELOAD=/home2/yunfeima/anaconda3/envs/tc/lib/libtcmalloc.so.4
+
 TOTAL_RECOMMDS=606720
 
 if [ -d results ]; then
@@ -7,7 +11,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-batchs='256 512 1024'
+# batchs='256 512 1024'
+batchs='128'
 
 for batch in $batchs
 do
@@ -15,7 +20,8 @@ do
 	echo "Running inference with batch size of $batch"
 	echo "----------------------------------------------------------------"
 	start=`date +%s%N`
-	python script/train.py --mode=test --batch_size=$batch |& tee results/result_infer_${batch}.txt
+	# numactl -N 0 python script/train.py --mode=test --batch_size=$batch |& tee results/result_infer_${batch}.txt
+        numactl -C 0-0,40-40 --membind=0 python script/train.py --mode=test --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_infer_${batch}.txt
 	end=`date +%s%N`
 	total_time=$(((end-start)/1000000))
     #total_time=`bc <<< "scale = 3; ($end-$start)/1000000000"`

@@ -1,4 +1,8 @@
 #!/bin/bash
+export KMP_AFFINITY=granularity=fine,verbose,compact,1,0
+export OMP_NUM_THREADS=6
+# export MKLDNN_VERBOSE=2
+
 
 NUM_ACCELERATORS=${NUM_ACCELERATORS:-1}
 echo "NUM_ACCELERATORS=${NUM_ACCELERATORS}"
@@ -12,8 +16,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-batchs='256 512 1024'
-#batchs='1024'
+#batchs='256 512 1024'
+batchs='256'
 
 for batch in $batchs
 do
@@ -21,7 +25,9 @@ do
 	echo "Running training with batch size of $batch"
 	echo "----------------------------------------------------------------"
 	start=`date +%s%N`
-	python script/train.py --mode=train --embedding_device=cpu --batch_size=$batch --num-intra-threads=20 --num-inter-threads=20 |& tee results/result_train_${batch}.txt
+	# numactl -l -N 0 python script/train.py --mode=train --batch_size=$batch  |& tee results/result_train_${batch}.txt
+        numactl -l -N 0 python script/train.py --mode=train --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
+        # python script/train.py --mode=train --batch_size=$batch --num-inter-threads=1         --num-intra-threads=20  |& tee results/result_train_${batch}.txt
 	end=`date +%s%N`
 	total_time=$(((end-start)/1000000))
     #total_time=`bc <<< "scale = 3; ($end-$start)/1000000000"`

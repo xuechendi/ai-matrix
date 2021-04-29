@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import GRUCell
+# from tensorflow.compat.v1.nn.rnn_cell import GRUCell
 from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn as bi_rnn
 #from tensorflow.python.ops.rnn import dynamic_rnn
@@ -7,6 +8,9 @@ from rnn import dynamic_rnn
 from utils import *
 from Dice import dice
 import numpy as np
+
+from tensorflow.python.client import timeline
+from tensorflow.python.platform import gfile
 
 class Model(object):
     def __init__(self, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, 
@@ -111,6 +115,9 @@ class Model(object):
                     self.cat_his_batch_embedded = tf.nn.embedding_lookup(self.cat_embeddings_var, self.cat_his_batch_ph)
                     if self.use_negsampling:
                         self.noclk_cat_his_batch_embedded = tf.nn.embedding_lookup(self.cat_embeddings_var, self.noclk_cat_batch_ph)
+                    self.uid_shape = tf.shape(self.uid_batch_ph)
+                    self.mid_shape = tf.shape(self.mid_batch_ph)
+                    self.cat_shape = tf.shape(self.cat_batch_ph)
             else:
                 print('embedding on ' + device)
                 self.uid_embeddings_var = tf.compat.v1.get_variable("uid_embedding_var", [n_uid, EMBEDDING_DIM], dtype=self.model_dtype)
@@ -145,6 +152,13 @@ class Model(object):
             self.noclk_his_eb_sum_1 = tf.reduce_sum(self.noclk_his_eb, 2)
             self.noclk_his_eb_sum = tf.reduce_sum(self.noclk_his_eb_sum_1, 1)
 
+    def _sparse_to_dense_grads(self, grads_and_vars):
+        # for g, v in grads_and_vars:
+        #     print("g", g)
+        #     print("v", v)
+        #     print("g_after", tf.convert_to_tensor(g))
+        return [(tf.convert_to_tensor(g), v) for g, v in grads_and_vars]
+
     def build_fcn_net(self, inp, use_dice = False):
         def dtype_getter(getter, name, dtype=None, *args, **kwargs):
             var = getter(name, dtype=self.model_dtype, *args, **kwargs)
@@ -174,13 +188,21 @@ class Model(object):
                 if self.use_negsampling:
                     self.loss += self.aux_loss
                 tf.compat.v1.summary.scalar('loss', self.loss)
-                self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+                # self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+                # self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
+                # self.optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=self.lr, momentum=0.9).minimize(self.loss)
+
+                # convert sparse optimizer to dense optimizer
+                adam_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.lr)
+                gradients = adam_optimizer.compute_gradients(self.loss)
+                gradients = self._sparse_to_dense_grads(gradients)
+                self.optimizer = adam_optimizer.apply_gradients(gradients)
 
                 # Accuracy metric
                 self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), self.model_dtype))
                 tf.compat.v1.summary.scalar('accuracy', self.accuracy)
 
-            self.merged = tf.compat.v1.summary.merge_all()
+            self.merged =  tf.compat.v1.summary.merge_all()
 
     def auxiliary_loss(self, h_states, click_seq, noclick_seq, mask, stag = None):
         def dtype_getter(getter, name, dtype=None, *args, **kwargs):
@@ -217,21 +239,49 @@ class Model(object):
         loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.optimizer])
         return loss, accuracy, 0
 
-    def train(self, sess, inps):
+    def train(self, sess, inps, timeline_flag=False, options=None,run_metadata=None, step=None):
         if self.use_negsampling:
-            loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer], feed_dict={
-                self.uid_batch_ph: inps[0],
-                self.mid_batch_ph: inps[1],
-                self.cat_batch_ph: inps[2],
-                self.mid_his_batch_ph: inps[3],
-                self.cat_his_batch_ph: inps[4],
-                self.mask: inps[5],
-                self.target_ph: inps[6],
-                self.seq_len_ph: inps[7],
-                self.lr: inps[8],
-                self.noclk_mid_batch_ph: inps[9],
-                self.noclk_cat_batch_ph: inps[10],
-            })
+            if timeline_flag:
+                loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer], 
+                    options=options,run_metadata=run_metadata,
+                    feed_dict={
+                    self.uid_batch_ph: inps[0],
+                    self.mid_batch_ph: inps[1],
+                    self.cat_batch_ph: inps[2],
+                    self.mid_his_batch_ph: inps[3],
+                    self.cat_his_batch_ph: inps[4],
+                    self.mask: inps[5],
+                    self.target_ph: inps[6],
+                    self.seq_len_ph: inps[7],
+                    self.lr: inps[8],
+                    self.noclk_mid_batch_ph: inps[9],
+                    self.noclk_cat_batch_ph: inps[10],
+                })
+
+                fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                chrome_trace = fetched_timeline.generate_chrome_trace_format()
+
+                with open('./timeline/dien_24core_1inst_train_timeline_im0525_8260_fp32_step{}_nosparse_adam_disable_noaddn_batch128_newunsortedsum_inter1_intra24_omp24_0615.json'.format(step), 'w') as f:
+                # with open('./timeline/dien_24core_1inst_train_timeline_im0525_8260_fp32_step{}_nosparse_adam_disable_noaddn_batch128_inter1_intra24_omp24_0615.json'.format(step), 'w') as f:
+                    f.write(chrome_trace)
+            else:
+                loss, accuracy, aux_loss, _, uid_shape, mid_shape, cat_shape, cat_res = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer, self.uid_shape, self.mid_shape, self.cat_shape, self.cat_batch_ph], feed_dict={
+                    self.uid_batch_ph: inps[0],
+                    self.mid_batch_ph: inps[1],
+                    self.cat_batch_ph: inps[2],
+                    self.mid_his_batch_ph: inps[3],
+                    self.cat_his_batch_ph: inps[4],
+                    self.mask: inps[5],
+                    self.target_ph: inps[6],
+                    self.seq_len_ph: inps[7],
+                    self.lr: inps[8],
+                    self.noclk_mid_batch_ph: inps[9],
+                    self.noclk_cat_batch_ph: inps[10],
+                })
+                # print("uid shape", uid_shape)
+                # print("mid shape", mid_shape)
+                # print("cat shape", cat_shape)
+                # print("cat_res", cat_res)
             return loss, accuracy, aux_loss
         else:
             loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.optimizer], feed_dict={
@@ -247,20 +297,43 @@ class Model(object):
             })
             return loss, accuracy, 0
 
-    def calculate(self, sess, inps):
+    def calculate(self, sess, inps, timeline=False, options=None,run_metadata=None):
         if self.use_negsampling:
-            probs, loss, accuracy, aux_loss = sess.run([self.y_hat, self.loss, self.accuracy, self.aux_loss], feed_dict={
-                self.uid_batch_ph: inps[0],
-                self.mid_batch_ph: inps[1],
-                self.cat_batch_ph: inps[2],
-                self.mid_his_batch_ph: inps[3],
-                self.cat_his_batch_ph: inps[4],
-                self.mask: inps[5],
-                self.target_ph: inps[6],
-                self.seq_len_ph: inps[7],
-                self.noclk_mid_batch_ph: inps[8],
-                self.noclk_cat_batch_ph: inps[9],
-            })
+            if timeline:
+                probs, loss, accuracy, aux_loss = sess.run(
+                    [self.y_hat, self.loss, self.accuracy, self.aux_loss], options=options,run_metadata=run_metadata, 
+                    feed_dict={
+                    self.uid_batch_ph: inps[0],
+                    self.mid_batch_ph: inps[1],
+                    self.cat_batch_ph: inps[2],
+                    self.mid_his_batch_ph: inps[3],
+                    self.cat_his_batch_ph: inps[4],
+                    self.mask: inps[5],
+                    self.target_ph: inps[6],
+                    self.seq_len_ph: inps[7],
+                    self.noclk_mid_batch_ph: inps[8],
+                    self.noclk_cat_batch_ph: inps[9],
+                })
+            else:
+                probs, loss, accuracy, aux_loss, item_his_eb_shape, din_all_shape, d_layer_1_all_shape = sess.run(
+                    [self.y_hat, self.loss, self.accuracy, self.aux_loss, self.item_his_eb_shape, self.din_all_shape, self.d_layer_1_all_shape], 
+                    feed_dict={
+                    self.uid_batch_ph: inps[0],
+                    self.mid_batch_ph: inps[1],
+                    self.cat_batch_ph: inps[2],
+                    self.mid_his_batch_ph: inps[3],
+                    self.cat_his_batch_ph: inps[4],
+                    self.mask: inps[5],
+                    self.target_ph: inps[6],
+                    self.seq_len_ph: inps[7],
+                    self.noclk_mid_batch_ph: inps[8],
+                    self.noclk_cat_batch_ph: inps[9],
+                })
+
+                # print("item_his_eb_shape", item_his_eb_shape)
+                # print("din_all_shape",din_all_shape) 
+                # print("d_layer_1_all_shape",d_layer_1_all_shape)
+
             return probs, loss, accuracy, aux_loss
         else:
             probs, loss, accuracy = sess.run([self.y_hat, self.loss, self.accuracy], feed_dict={
@@ -370,7 +443,7 @@ class Model_WideDeep(Model):
             # Accuracy metric
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), tf.float32))
             tf.compat.v1.summary.scalar('accuracy', self.accuracy)
-        self.merged = tf.compat.v1.summary.merge_all()
+        self.merged =  tf.compat.v1.summary.merge_all()
 
 
 class Model_DIN_V2_Gru_QA_attGru(Model):
@@ -454,9 +527,12 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
         with tf.compat.v1.variable_scope("dien", custom_getter=dtype_getter, dtype=self.model_dtype):
             # RNN layer(-s)
             with tf.name_scope('rnn_1'):
+                print('-----------------------------------')
+                self.item_his_eb_shape = tf.shape(self.item_his_eb)
+                #TODO(yunfei):use tf2 grucell 
                 rnn_outputs, _ = dynamic_rnn(tf.compat.v1.nn.rnn_cell.GRUCell(HIDDEN_SIZE), inputs=self.item_his_eb,
                                              sequence_length=self.seq_len_ph, dtype=self.model_dtype,
-                                             scope="gru1")
+                                             scope="gru1",parallel_iterations=32)
                 tf.compat.v1.summary.histogram('GRU_outputs', rnn_outputs)
 
             aux_loss_1 = self.auxiliary_loss(rnn_outputs[:, :-1, :], self.item_his_eb[:, 1:, :],
@@ -466,7 +542,7 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
 
             # Attention layer
             with tf.name_scope('Attention_layer_1'):
-                att_outputs, alphas = din_fcn_attention(self.item_eb, rnn_outputs, ATTENTION_SIZE, self.mask,
+                att_outputs, alphas, din_all_shape, d_layer_1_all_shape = din_fcn_attention(self.item_eb, rnn_outputs, ATTENTION_SIZE, self.mask,
                                                         softmax_stag=1, stag='1_1', mode='LIST', return_alphas=True)
                 tf.compat.v1.summary.histogram('alpha_outputs', alphas)
 
@@ -474,11 +550,15 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
                 rnn_outputs2, final_state2 = dynamic_rnn(VecAttGRUCell(HIDDEN_SIZE), inputs=rnn_outputs,
                                                          att_scores = tf.expand_dims(alphas, -1),
                                                          sequence_length=self.seq_len_ph, dtype=self.model_dtype,
-                                                         scope="gru2")
+                                                         scope="gru2",parallel_iterations=32)
                 tf.compat.v1.summary.histogram('GRU2_Final_State', final_state2)
+                rnn_outputs2_shape = tf.shape(rnn_outputs2)
+                final_state2_shape = tf.shape(final_state2)
 
             inp = tf.concat([self.uid_batch_embedded, self.item_eb, self.item_his_eb_sum, self.item_eb * self.item_his_eb_sum, final_state2], 1)
             self.build_fcn_net(inp, use_dice=True)
+            self.din_all_shape = din_all_shape
+            self.d_layer_1_all_shape = d_layer_1_all_shape
 
 
 class Model_DIN_V2_Gru_Vec_attGru(Model):

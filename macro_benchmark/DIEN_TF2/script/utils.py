@@ -384,8 +384,18 @@ def din_fcn_attention(query, facts, attention_size, mask, stag='null', mode='SUM
     queries = tf.tile(query, [1, tf.shape(facts)[1]])
     queries = tf.reshape(queries, tf.shape(facts))
     din_all = tf.concat([queries, facts, queries-facts, queries*facts], axis=-1)
+
+    din_all_shape = tf.shape(din_all)
+    # din_all = tf.reshape(din_all, [-1, 144])
+    # din_all = tf.reshape(din_all, [din_all_shape[0] * din_all_shape[1], din_all_shape[2]])
+
     d_layer_1_all = tf.compat.v1.layers.dense(din_all, 80, activation=tf.nn.sigmoid, name='f1_att' + stag)
+    d_layer_1_all_shape = tf.shape(d_layer_1_all)
+    # d_layer_1_all = tf.reshape(d_layer_1_all, [-1, 80])
+
     d_layer_2_all = tf.compat.v1.layers.dense(d_layer_1_all, 40, activation=tf.nn.sigmoid, name='f2_att' + stag)
+    # d_layer_2_all = tf.reshape(d_layer_2_all, [-1, 40])
+    
     d_layer_3_all = tf.compat.v1.layers.dense(d_layer_2_all, 1, activation=None, name='f3_att' + stag)
     d_layer_3_all = tf.reshape(d_layer_3_all, [-1, 1, tf.shape(facts)[1]])
     scores = d_layer_3_all
@@ -412,7 +422,8 @@ def din_fcn_attention(query, facts, attention_size, mask, stag='null', mode='SUM
         output = facts * tf.expand_dims(scores, -1)
         output = tf.reshape(output, tf.shape(facts))
     if return_alphas:
-        return output, scores
+        return output, scores, din_all_shape, d_layer_1_all_shape
+        # return output, scores
     return output
 
 def self_attention(facts, ATTENTION_SIZE, mask, stag='null'):
