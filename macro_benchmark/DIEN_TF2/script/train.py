@@ -13,9 +13,11 @@ import argparse
 from tensorflow.python.client import timeline
 from tensorflow.python.platform import gfile
 
+import horovod.tensorflow as hvd
+#hvd.init()
+
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default='train',
@@ -40,6 +42,8 @@ EMBEDDING_DIM = 18
 HIDDEN_SIZE = 18 * 2
 ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
+#TARGET_AUC = 0.6
+TARGET_AUC = 0.825
 
 #TOTAL_TRAIN_SIZE = 512000
 TOTAL_TRAIN_SIZE = 5120000
@@ -324,8 +328,12 @@ def train(
         session_config.intra_op_parallelism_threads = args.num_intra_threads
         session_config.inter_op_parallelism_threads = args.num_inter_threads
 
+    #hooks = [hvd.BroadcastGlobalVariablesHook(0)]
+
     session_start_time = time.time()
+    #with tf.compat.v1.train.MonitoredTrainingSession(config=session_config, hooks=hooks) as sess:
     with tf.compat.v1.Session(config=session_config) as sess:
+        sess.run(hvd.broadcast_global_variables(0))
         # with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) as sess:
         train_data = DataIterator(
             train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
@@ -479,6 +487,7 @@ def train(
                 iter += 1
                 train_size += batch_size
                 sys.stdout.flush()
+                test_auc = 0.0
                 if (iter % test_iter) == 0:
                     # print("train_size: %d" % train_size)
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
@@ -499,7 +508,7 @@ def train(
                     loss_sum = 0.0
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0
-                if (iter % save_iter) == 0:
+                if (iter % save_iter) == 0 and hvd.rank() == 0:
                     # if (iter % 10000) == 0:
                     print('save model iter: %d' % (iter))
                     save_start_time = time.time()
@@ -508,12 +517,14 @@ def train(
                     save_elapse_time += (save_end_time - save_start_time)
                 if train_size >= TOTAL_TRAIN_SIZE:
                     break
+                if test_auc >= TARGET_AUC:
+                    break
 
             # with open('./times/24core_1inst_train_timeline_g210_8260_nosparse_adam_disable_noaddn_batch128_newunsortedsum_inter4_intra6_omp6_0615.txt', 'w') as wf:
             # with open('./times/dien_24core_1inst_train_timeline_8260_fp32_step{}_im0617allmklinput_tanhfusion_inter1_intra24_omp24_0701.txt'.format(nums), 'w') as wf:
-            with open('./times/dien_train_timeline_fp32_step{}.txt'.format(nums), 'w') as wf:
-                for time_per_iter in elapsed_time_records:
-                    wf.write(str(time_per_iter) + '\n')
+            # with open('./times/dien_train_timeline_fp32_step{}.txt'.format(nums), 'w') as wf:
+            #   for time_per_iter in elapsed_time_records:
+            #       wf.write(str(time_per_iter) + '\n')
 
             print("iteration: ", nums)
 
