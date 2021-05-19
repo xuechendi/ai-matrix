@@ -16,8 +16,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-#batchs='256 512 1024'
-batchs='256'
+batchs='512 1024'
+#batchs='256'
 
 for batch in $batchs
 do
@@ -27,8 +27,9 @@ do
 	start=`date +%s%N`
 	# numactl -l -N 0 python script/train.py --mode=train --batch_size=$batch  |& tee results/result_train_${batch}.txt
         #python script/train.py --mode=train --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
-	#horovodrun --start-timeout 300 -np 2 -H 10.2.0.30:1,10.2.0.19:1 --verbose -p 12345 python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
-	mpirun -map-by socket -n 2 -hosts localhost,sr119 -ppn 1 -print-rank-map -verbose -genv HOROVOD_CPU_OPERATIONS=CCL -genv I_MPI_PIN_DOMAIN=socket python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
+	horovodrun -np 2 -H 10.1.0.30:1,10.1.0.19:1 --network-interface enp134s0f1 --verbose -p 12345 python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
+	#horovodrun  --timeline-filename horovod_timeline_2.json --timeline-mark-cycles -np 2 -H 10.1.0.30:1,10.1.0.19:1 --network-interface enp134s0f1 --verbose -p 12345 python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
+	#mpirun -map-by socket -n 2 -hosts sr130,sr119 -ppn 1 -print-rank-map -prepend-rank -verbose -genv HOROVOD_CPU_OPERATIONS=CCL -genv I_MPI_PIN_DOMAIN=socket python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
 	#mpirun -np 2 -H sr130:1,sr119:1 -p 12345 python /home/xxx/dien/macro_benchmark/DIEN_TF2/script/train.py --mode=train --batch_size=$batch  --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
         # python script/train.py --mode=train --batch_size=$batch --num-inter-threads=1         --num-intra-threads=20  |& tee results/result_train_${batch}.txt
 	end=`date +%s%N`
@@ -41,4 +42,4 @@ do
     echo "System performance in recommendations/second is: $system_performance" >> results/result_train_${batch}.txt
 done
 
-python process_results.py --train
+#python process_results.py --train

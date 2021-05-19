@@ -197,7 +197,7 @@ class Model(object):
                 # self.optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=self.lr, momentum=0.9).minimize(self.loss)
 
                 # convert sparse optimizer to dense optimizer
-                adam_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.lr * hvd.size())
+                adam_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.lr)
                 adam_optimizer = hvd.DistributedOptimizer(adam_optimizer)
                 gradients = adam_optimizer.compute_gradients(self.loss)
                 gradients = self._sparse_to_dense_grads(gradients)

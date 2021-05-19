@@ -43,7 +43,9 @@ HIDDEN_SIZE = 18 * 2
 ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 #TARGET_AUC = 0.6
-TARGET_AUC = 0.825
+TARGET_AUC = 0.83
+current_auc = 0.0
+lower_than_current_cnt = 0
 
 #TOTAL_TRAIN_SIZE = 512000
 TOTAL_TRAIN_SIZE = 5120000
@@ -217,6 +219,15 @@ def eval(sess, test_data, model, model_path, test_prepared = None):
         best_auc = test_auc
         if args.mode == 'train':
             model.save(sess, model_path)
+
+    global current_auc
+    global lower_than_current_cnt
+    if test_auc >= current_auc:
+        current_auc = test_auc
+    else:
+        print("current auc is %.4f and test auc is %.4f" % (current_auc, test_auc))
+        lower_than_current_cnt += 1
+
     return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, prepare_time, nums, prepared_data
 
 
@@ -517,7 +528,9 @@ def train(
                     save_elapse_time += (save_end_time - save_start_time)
                 if train_size >= TOTAL_TRAIN_SIZE:
                     break
-                if test_auc >= TARGET_AUC:
+                if current_auc >= TARGET_AUC:
+                    break
+                if lower_than_current_cnt >= 2:
                     break
 
             # with open('./times/24core_1inst_train_timeline_g210_8260_nosparse_adam_disable_noaddn_batch128_newunsortedsum_inter4_intra6_omp6_0615.txt', 'w') as wf:
