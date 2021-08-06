@@ -16,8 +16,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-#batchs='256 512 1024'
-batchs='256'
+batchs='256 512 1024'
+#batchs='256'
 
 for batch in $batchs
 do
@@ -26,8 +26,8 @@ do
 	echo "----------------------------------------------------------------"
 	start=`date +%s%N`
 	# numactl -l -N 0 python script/train.py --mode=train --batch_size=$batch  |& tee results/result_train_${batch}.txt
-        python script/train.py --mode=train --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
-        # python script/train.py --mode=train --batch_size=$batch --num-inter-threads=1         --num-intra-threads=20  |& tee results/result_train_${batch}.txt
+  python script/train.py --mode=train --batch_size=$batch --num-inter-threads=20 --num-intra-threads=20 |& tee results/result_train_${batch}.txt
+  # python script/train.py --mode=train --batch_size=$batch --num-inter-threads=1         --num-intra-threads=20  |& tee results/result_train_${batch}.txt
 	end=`date +%s%N`
 	total_time=$(((end-start)/1000000))
     #total_time=`bc <<< "scale = 3; ($end-$start)/1000000000"`
@@ -38,4 +38,4 @@ do
     echo "System performance in recommendations/second is: $system_performance" >> results/result_train_${batch}.txt
 done
 
-python process_results.py --train
+#python process_results.py --train
