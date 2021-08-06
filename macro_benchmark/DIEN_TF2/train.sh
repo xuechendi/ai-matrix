@@ -12,8 +12,8 @@ if [ -d results ]; then
 fi
 mkdir results
 
-#batchs='256 512 1024'
-batchs='256'
+batchs='256 512 1024'
+#batchs='512'
 
 for batch in $batchs
 do
@@ -32,4 +32,4 @@ do
     echo "System performance in recommendations/second is: $system_performance" >> results/result_train_${batch}.txt
 done
 
-python process_results.py --train
+#python process_results.py --train
